@@ -10,6 +10,7 @@ small_test.txt
 # Distribution / packaging
 .Python
 build/
+cmake-build-debug/
 develop-eggs/
 dist/
 downloads/
@@ -21,6 +22,8 @@ parts/
 sdist/
 var/
 wheels/
+.idea/
+CMakeLists.txt
 share/python-wheels/
 *.egg-info/
 .installed.cfg

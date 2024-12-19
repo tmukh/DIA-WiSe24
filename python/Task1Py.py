@@ -1,6 +1,8 @@
-from enum import Enum
 import heapq
+from enum import Enum
 from tqdm import tqdm
+
+
 # Error codes
 class ErrorCode(Enum):
     EC_SUCCESS = 0
@@ -131,4 +133,4 @@ def parse_and_execute(file_path, output_file):
                 output.write(results[-1] + "\n")
             pbar.update(1)
     return results
-parse_and_execute("big_test.txt", "big_out.txt")
+parse_and_execute("../big_test.txt", "big_out.txt")
