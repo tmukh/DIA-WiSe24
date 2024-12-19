@@ -72,6 +72,22 @@ unordered_map<QueryID, shared_ptr<Query>> queryMap;
 
 ///////////////////////////////////////////////////////////////////////////////////////////////
 
+char *convert_to_chr(const string & s)
+{
+    const auto pc = new char[s.size()+1];
+    strcpy(pc, s.c_str());
+    return pc;
+}
+QueryID convert_to_qid(const string & s)
+{
+    auto *pc = new char[s.size()+1];
+    strcpy(pc, s.c_str());
+    QueryID q = static_cast<QueryID>(stoul(pc));
+    return q;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////
+
 // Computes edit distance between a null-terminated string "a" with length "na"
 //  and a null-terminated string "b" with length "nb"
 int EditDistance(const char* a, const int na, const char* b, const int nb){
@@ -176,9 +192,7 @@ void ReadFile(const string& filename)
 
     // read line by line
     string line,token;
-    int counter = 0;
     while (getline(file,line)) {
-        if (counter >=3) break;
 
         istringstream lineStream(line);
         vector<string> tokens;
@@ -186,23 +200,55 @@ void ReadFile(const string& filename)
         while (lineStream >> token) {
             tokens.push_back(token);
         }
+        ErrorCode result;
+        unsigned int len;
 
         // Interpret line argument
-        switch (tokens[0]) {
-            case 's':
-                auto result = StartQuery(tokens[1], tokens[2], tokens[3], tokens[4]);
-            case 'e':
-                auto result = EndQuery(tokens[1]);
-            case 'm':
-                break;
-            case 'e':
-                break;
-            default:
-                break;
-        }
-        counter++;
-    }
+        if(*tokens[0].c_str()=='s'){
+            len = static_cast<unsigned int>(stoul(tokens[4]));
+            auto first = tokens.begin() + 4;
+            auto last = tokens.begin() + 4 + len;
+            vector<char*> words;
+            transform(first, last, back_inserter(words), convert_to_chr);
 
+            result = StartQuery(static_cast<QueryID>(stoul(tokens[1])),
+                                *words.data(),
+                                static_cast<MatchType>(stoul(tokens[2])),
+                                static_cast<unsigned int>(stoul(tokens[3])));
+            continue;
+        }
+
+        // End Query
+        if(*tokens[0].c_str()=='e'){
+            result = EndQuery(static_cast<QueryID>(stoul(tokens[1])));
+            continue;
+        }
+
+        // Match the documents
+        if(*tokens[0].c_str()=='m')
+        {
+            len = static_cast<unsigned int>(stoul(tokens[2]));
+            auto first = tokens.begin() + 2;
+            auto last = tokens.begin() + 2 + len;
+            vector<char*> words;
+            transform(first, last, back_inserter(words), convert_to_chr);
+            // result = MatchDocument(static_cast<DocID>(stoul(tokens[1])),*words.data());
+            continue;
+        }
+
+        // Return results of matched queries
+        if(*tokens[0].c_str()=='r'){
+            len = static_cast<unsigned int>(stoul(tokens[2]));
+            auto first = tokens.begin() + 2;
+            auto last = tokens.begin() + 2 + len;
+            vector<QueryID> words;
+            transform(first, last, back_inserter(words), convert_to_qid);
+            DocID doc = (static_cast<DocID>(stoul(tokens[1])));
+            auto fw = &words[0];
+            // result = GetNextAvailRes(&doc, &len, &(fw));
+            continue;
+        }
+    }
     file.close();
 }
 
