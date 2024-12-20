@@ -3,9 +3,11 @@
 #include <sstream>
 #include <filesystem>
 #include <fstream>
+#include <array>
 #include <bits/stdc++.h>
 #include <unordered_map>
 #include <vector>
+#include "../include/Task2.h"
 using namespace std;
 
 /// Definitions:
@@ -24,28 +26,26 @@ using namespace std;
 typedef unsigned int QueryID;
 /// Document ID type.
 typedef unsigned int DocID;
-/// Matching types:
-typedef enum{MT_EXACT_MATCH, MT_HAMMING_DIST, MT_EDIT_DIST}MatchType;
-/// Error codes:
-typedef enum{EC_SUCCESS, EC_NO_AVAIL_RES, EC_FAIL}ErrorCode;
 
 /// Structs:
 ///
 /// Struct representing query details
 struct Query {
     QueryID query_id;
-    char query_str[MAX_QUERY_LENGTH]{};
+    vector<string>* query_tokens;
     MatchType match_type;
     unsigned int match_dist;
 
-    Query(const QueryID query_id, const char* str, const MatchType match_type, const unsigned int match_dist)
-        : query_id(query_id), match_type(match_type), match_dist(match_dist) {
-        strcpy(query_str, str);
+    Query(const QueryID query_id, vector<string>* tokens, const MatchType match_type, const unsigned int match_dist)
+        : query_id(query_id), query_tokens(tokens),match_type(match_type), match_dist(match_dist) {
     }
 
     void show() const {
         cout << "query_id: " << query_id;
-        cout << ", query_str: " << query_str;
+    	cout << ", query_str: ";
+    	for (const auto& str : *query_tokens) {
+        	cout << str << " ";
+        }
         cout << ", match_type: " << match_type;
         cout << ", match_dist: " << match_dist << endl;
     }
@@ -69,6 +69,7 @@ struct Document {
 ///
 /// QueryId->QueryPointer Dictionary
 unordered_map<QueryID, shared_ptr<Query>> queryMap;
+unordered_map<DocID, shared_ptr<Document>> docMap;
 
 ///////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -158,7 +159,18 @@ ErrorCode StartQuery(QueryID        query_id,
                      MatchType      match_type,
                      unsigned int   match_dist) {
     if (queryMap.find(query_id) != queryMap.end()) return EC_FAIL;
-    const auto query = make_shared<Query>(query_id, query_str, match_type, match_dist);
+
+    // Tokenization
+    vector<string> tokens;
+	char* str = new char[strlen(query_str) + 1];
+	strcpy(str, query_str);
+	char* token = strtok(str, " ");
+	while (token != nullptr) {
+		tokens.emplace_back(token);
+		token = strtok(nullptr, " ");
+	}
+
+    const auto query = make_shared<Query>(query_id, &tokens, match_type, match_dist);
     queryMap[query->query_id] = query;
     return EC_SUCCESS;
 }
@@ -173,89 +185,80 @@ ErrorCode EndQuery(QueryID query_id) {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////
 
-ErrorCode MatchDocument(DocID doc_id, const char* doc_str);
-
-///////////////////////////////////////////////////////////////////////////////////////////////
-
-ErrorCode GetNextAvailRes(DocID* p_doc_id, unsigned int* p_num_res, QueryID** p_query_ids);
-
-///////////////////////////////////////////////////////////////////////////////////////////////
-// Read the current file and process the instructions line by line
-void ReadFile(const string& filename)
+ErrorCode MatchDocument(DocID doc_id, const char* doc_str)
 {
-    // Open file stream
-    ifstream file(filename);
-    if (!file.is_open()) {
-        cerr << "Failed to open file: " << filename << std::endl;
-        return;
-    }
+	vector<QueryID> query_ids;
 
-    // read line by line
-    string line,token;
-    while (getline(file,line)) {
+	// Tokenization
+	vector<string> DocTokens;
+	char cur_doc_str[MAX_DOC_LENGTH];
+	strcpy(cur_doc_str, doc_str);
 
-        istringstream lineStream(line);
-        vector<string> tokens;
-        // push all space separated tokens into a vector
-        while (lineStream >> token) {
-            tokens.push_back(token);
-        }
-        ErrorCode result;
-        unsigned int len;
+	char* docToken = strtok(cur_doc_str, " ");
+	while (docToken != nullptr) {
+		DocTokens.emplace_back(docToken);
+		docToken = strtok(nullptr, " ");
+	}
 
-        // Interpret line argument
-        if(*tokens[0].c_str()=='s'){
-            len = static_cast<unsigned int>(stoul(tokens[4]));
-            auto first = tokens.begin() + 4;
-            auto last = tokens.begin() + 4 + len;
-            vector<char*> words;
-            transform(first, last, back_inserter(words), convert_to_chr);
+	// Iterate on all active queries to compare them with this new document
+	for (const auto& [key, quer] : queryMap) {
+		bool matching_query=true;
+		for (const auto& qtoken : *(quer->query_tokens)){
+            if (!matching_query) break;
 
-            result = StartQuery(static_cast<QueryID>(stoul(tokens[1])),
-                                *words.data(),
-                                static_cast<MatchType>(stoul(tokens[2])),
-                                static_cast<unsigned int>(stoul(tokens[3])));
-            continue;
-        }
+            bool matching_word=false;
+			for (const auto& dToken : DocTokens){
+				if(quer->match_type==MT_EXACT_MATCH){
+					if(strcmp(qtoken.c_str(), dToken.c_str())==0){
+                      matching_word=true;
+                      break;
+                    }
+				}
+				else if(quer->match_type==MT_HAMMING_DIST){
+					unsigned int num_mismatches=HammingDistance(qtoken.c_str(), qtoken.length(), dToken.c_str(), dToken.length());
+					if(num_mismatches<=quer->match_dist){
+                        matching_word=true;
+                        break;
+                    }
+				}
+				else if(quer->match_type==MT_EDIT_DIST){
+					unsigned int edit_dist=EditDistance(qtoken.c_str(), qtoken.length(), dToken.c_str(), dToken.length());
+					if(edit_dist<=quer->match_dist){
+                    	matching_word=true;
+                        break;
+                    }
+				}
+			}
+			if(!matching_word)matching_query=false;
+		}
 
-        // End Query
-        if(*tokens[0].c_str()=='e'){
-            result = EndQuery(static_cast<QueryID>(stoul(tokens[1])));
-            continue;
-        }
+		if(matching_query) query_ids.push_back(quer->query_id);
+	}
+	QueryID* matched_query_ids;
+	if(query_ids.size()>0){
+        matched_query_ids=(unsigned int*)malloc(query_ids.size()*sizeof(unsigned int));
+		for(long unsigned int i=0;i<query_ids.size();i++) matched_query_ids[i]=query_ids[i];
+		const auto doc = make_shared<Document>(doc_id, query_ids.size(), matched_query_ids);
+        doc->show();
+		// Add this result to the set of undelivered results
+		docMap[doc->doc_id] = doc;
+		return EC_SUCCESS;
+    } else return EC_FAIL;
+}
 
-        // Match the documents
-        if(*tokens[0].c_str()=='m')
-        {
-            len = static_cast<unsigned int>(stoul(tokens[2]));
-            auto first = tokens.begin() + 2;
-            auto last = tokens.begin() + 2 + len;
-            vector<char*> words;
-            transform(first, last, back_inserter(words), convert_to_chr);
-            // result = MatchDocument(static_cast<DocID>(stoul(tokens[1])),*words.data());
-            continue;
-        }
+///////////////////////////////////////////////////////////////////////////////////////////////
 
-        // Return results of matched queries
-        if(*tokens[0].c_str()=='r'){
-            len = static_cast<unsigned int>(stoul(tokens[2]));
-            auto first = tokens.begin() + 2;
-            auto last = tokens.begin() + 2 + len;
-            vector<QueryID> words;
-            transform(first, last, back_inserter(words), convert_to_qid);
-            DocID doc = (static_cast<DocID>(stoul(tokens[1])));
-            auto fw = &words[0];
-            // result = GetNextAvailRes(&doc, &len, &(fw));
-            continue;
-        }
-    }
-    file.close();
+ErrorCode GetNextAvailRes(DocID* p_doc_id, unsigned int* p_num_res, QueryID** p_query_ids){
+	// Get the first undeliverd resuilt from "docs" and return it
+	*p_doc_id=0; *p_num_res=0; *p_query_ids=0;
+	if (docMap.empty()) return EC_NO_AVAIL_RES;
+	if (docMap.find(*p_doc_id) == docMap.end()) return EC_NO_AVAIL_RES;
+	*p_doc_id=docMap[*p_doc_id]->doc_id; *p_num_res=docMap[*p_doc_id]->num_res; *p_query_ids=docMap[*p_doc_id]->query_ids;
+	docMap.erase(*p_doc_id);
+	return EC_SUCCESS;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////
 
 int main(int, char**){
-    InitializeIndex();
-    ReadFile("/home/awsam/Desktop/apps/DIA/DIA-WiSe24/big_test.txt");
-    DestroyIndex();
 }

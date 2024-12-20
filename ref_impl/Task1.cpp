@@ -1,4 +1,3 @@
-
 #include "../include/Task1.h"
 #include <cstring>
 #include <cstdlib>

@@ -1,6 +1,6 @@
 # Build targets (your implementation targets should go in IMPL_O)
 TEST_O=test_driver/test.o 
-IMPL_O=ref_impl/Task1.o
+IMPL_O=ref_impl/Task2.o
 
 # Compiler flags
 CC  = gcc
@@ -13,7 +13,7 @@ LDFLAGS=-lpthread
 PROGRAMS=testdriver
 
 # The name of the library that will be built
-LIBRARY=Task1
+LIBRARY=Task2
 
 # Build all programs
 all: $(PROGRAMS)
