@@ -32,18 +32,18 @@ typedef unsigned int DocID;
 /// Struct representing query details
 struct Query {
     QueryID query_id;
-    vector<string>* query_tokens;
+    vector<string> query_tokens;
     MatchType match_type;
     unsigned int match_dist;
 
-    Query(const QueryID query_id, vector<string>* tokens, const MatchType match_type, const unsigned int match_dist)
+    Query(const QueryID query_id, vector<string> tokens, const MatchType match_type, const unsigned int match_dist)
         : query_id(query_id), query_tokens(tokens),match_type(match_type), match_dist(match_dist) {
     }
 
     void show() const {
         cout << "query_id: " << query_id;
     	cout << ", query_str: ";
-    	for (const auto& str : *query_tokens) {
+    	for (const auto& str : query_tokens) {
         	cout << str << " ";
         }
         cout << ", match_type: " << match_type;
@@ -61,7 +61,7 @@ struct Document {
 
     void show() const {
         cout << "doc_id: " << doc_id;
-        cout << ", num_res: " << num_res;
+        cout << ", num_res: " << num_res << endl;
     }
 };
 
@@ -169,8 +169,7 @@ ErrorCode StartQuery(QueryID        query_id,
 		tokens.emplace_back(token);
 		token = strtok(nullptr, " ");
 	}
-
-    const auto query = make_shared<Query>(query_id, &tokens, match_type, match_dist);
+    const auto query = make_shared<Query>(query_id, tokens, match_type, match_dist);
     queryMap[query->query_id] = query;
     return EC_SUCCESS;
 }
@@ -203,26 +202,44 @@ ErrorCode MatchDocument(DocID doc_id, const char* doc_str)
 	// Iterate on all active queries to compare them with this new document
 	for (const auto& [key, quer] : queryMap) {
 		bool matching_query=true;
-		for (const auto& qtoken : *(quer->query_tokens)){
+		for (const string& qtoken : quer->query_tokens){
             if (!matching_query) break;
 
             bool matching_word=false;
-			for (const auto& dToken : DocTokens){
+			for (const auto& dtoken : DocTokens){
 				if(quer->match_type==MT_EXACT_MATCH){
-					if(strcmp(qtoken.c_str(), dToken.c_str())==0){
+					if(strcmp(qtoken.c_str(), dtoken.c_str())==0){
                       matching_word=true;
                       break;
                     }
 				}
 				else if(quer->match_type==MT_HAMMING_DIST){
-					unsigned int num_mismatches=HammingDistance(qtoken.c_str(), qtoken.length(), dToken.c_str(), dToken.length());
+					unsigned int num_mismatches=HammingDistance(qtoken.c_str(), qtoken.length(), dtoken.c_str(), dtoken.length());
 					if(num_mismatches<=quer->match_dist){
                         matching_word=true;
                         break;
                     }
 				}
 				else if(quer->match_type==MT_EDIT_DIST){
-					unsigned int edit_dist=EditDistance(qtoken.c_str(), qtoken.length(), dToken.c_str(), dToken.length());
+                    // Low-Overhead Filtering
+                    unsigned int m = qtoken.length();
+                    unsigned int n = dtoken.length();
+                    unsigned int diff = abs((int)(m - n));
+                    if (diff > quer->match_dist) continue;
+                    // Frequency Histogram
+                    vector<int> frequency;
+                    frequency.assign(26,0);
+
+                    for (size_t i=0; i<max(m,n); i++){
+                      if (i < m) frequency[qtoken[i]-'a']++;
+                      if (i < n) frequency[dtoken[i]-'a']--;
+                    }
+                    unsigned int sum_of_abs = accumulate(frequency.begin(), frequency.end(), 0, [](int sum, int val) {
+                      return sum + abs(val);
+                    });
+                    if (sum_of_abs > 2*(quer->match_dist) - diff ) continue;
+                    // Actually compute the distance
+					unsigned int edit_dist=EditDistance(qtoken.c_str(), qtoken.length(), dtoken.c_str(), dtoken.length());
 					if(edit_dist<=quer->match_dist){
                     	matching_word=true;
                         break;
@@ -238,8 +255,9 @@ ErrorCode MatchDocument(DocID doc_id, const char* doc_str)
 	if(query_ids.size()>0){
         matched_query_ids=(unsigned int*)malloc(query_ids.size()*sizeof(unsigned int));
 		for(long unsigned int i=0;i<query_ids.size();i++) matched_query_ids[i]=query_ids[i];
+        sort(matched_query_ids, matched_query_ids + query_ids.size());
 		const auto doc = make_shared<Document>(doc_id, query_ids.size(), matched_query_ids);
-        doc->show();
+//        doc->show();
 		// Add this result to the set of undelivered results
 		docMap[doc->doc_id] = doc;
 		return EC_SUCCESS;
@@ -252,8 +270,8 @@ ErrorCode GetNextAvailRes(DocID* p_doc_id, unsigned int* p_num_res, QueryID** p_
 	// Get the first undeliverd resuilt from "docs" and return it
 	*p_doc_id=0; *p_num_res=0; *p_query_ids=0;
 	if (docMap.empty()) return EC_NO_AVAIL_RES;
-	if (docMap.find(*p_doc_id) == docMap.end()) return EC_NO_AVAIL_RES;
-	*p_doc_id=docMap[*p_doc_id]->doc_id; *p_num_res=docMap[*p_doc_id]->num_res; *p_query_ids=docMap[*p_doc_id]->query_ids;
+	if (docMap.find(*p_doc_id) == docMap.end()) *p_doc_id = (DocID)(docMap.begin()->first);
+	*p_doc_id = docMap[*p_doc_id]->doc_id; *p_num_res = docMap[*p_doc_id]->num_res; *p_query_ids=docMap[*p_doc_id]->query_ids;
 	docMap.erase(*p_doc_id);
 	return EC_SUCCESS;
 }
