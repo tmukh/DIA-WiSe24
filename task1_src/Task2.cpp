@@ -10,33 +10,13 @@
 #include "../include/Task2.h"
 using namespace std;
 
-/// Definitions:
-///
-/// Maximum document length in characters.
-#define MAX_DOC_LENGTH (1<<22)
-/// Maximum word length in characters.
-#define MAX_WORD_LENGTH 31
-/// Minimum word length in characters.
-#define MIN_WORD_LENGTH 4
-/// Maximum number of words in a query.
-#define MAX_QUERY_WORDS 5
-/// Maximum query length in characters.
-#define MAX_QUERY_LENGTH ((MAX_WORD_LENGTH+1)*MAX_QUERY_WORDS)
-/// Query ID type.
-typedef unsigned int QueryID;
-/// Document ID type.
-typedef unsigned int DocID;
-
-/// Structs:
-///
-/// Struct representing query details
-struct Query {
+struct QueryNaive {
     QueryID query_id;
     vector<string> query_tokens;
     MatchType match_type;
     unsigned int match_dist;
 
-    Query(const QueryID query_id, vector<string> tokens, const MatchType match_type, const unsigned int match_dist)
+    QueryNaive(const QueryID query_id, vector<string> tokens, const MatchType match_type, const unsigned int match_dist)
         : query_id(query_id), query_tokens(tokens),match_type(match_type), match_dist(match_dist) {
     }
 
@@ -64,11 +44,19 @@ struct Document {
         cout << ", num_res: " << num_res << endl;
     }
 };
+struct PairHash {
+    template <class T1, class T2>
+    size_t operator()(const pair<T1, T2>& pair) const {
+        auto hash1 = hash<T1>{}(pair.first);
+        auto hash2 = hash<T2>{}(pair.second);
+        return hash1 ^ (hash2 << 1);
+    }
+};
 
 /// Data structures to hold the data
 ///
 /// QueryId->QueryPointer Dictionary
-unordered_map<QueryID, shared_ptr<Query>> queryMap;
+unordered_map<QueryID, shared_ptr<QueryNaive>> queryMap;
 unordered_map<DocID, shared_ptr<Document>> docMap;
 
 ///////////////////////////////////////////////////////////////////////////////////////////////
@@ -169,7 +157,7 @@ ErrorCode StartQuery(QueryID        query_id,
 		tokens.emplace_back(token);
 		token = strtok(nullptr, " ");
 	}
-    const auto query = make_shared<Query>(query_id, tokens, match_type, match_dist);
+    const auto query = make_shared<QueryNaive>(query_id, tokens, match_type, match_dist);
     queryMap[query->query_id] = query;
     return EC_SUCCESS;
 }
@@ -187,15 +175,18 @@ ErrorCode EndQuery(QueryID query_id) {
 ErrorCode MatchDocument(DocID doc_id, const char* doc_str)
 {
 	vector<QueryID> query_ids;
+    unordered_map<string, unsigned int> common_exact_matches;
+    unordered_map<pair<string,string>, unsigned int, PairHash> common_ham_matches;
+    unordered_map<pair<string,string>, unsigned int, PairHash> common_edit_matches;
 
-	// Tokenization
-	vector<string> DocTokens;
-	char cur_doc_str[MAX_DOC_LENGTH];
-	strcpy(cur_doc_str, doc_str);
-
-	char* docToken = strtok(cur_doc_str, " ");
-	while (docToken != nullptr) {
-		DocTokens.emplace_back(docToken);
+    // Tokenization
+    vector<string> DocTokens;
+  	char cur_doc_str[MAX_DOC_LENGTH];
+  	strcpy(cur_doc_str, doc_str);
+  	char* docToken = strtok(cur_doc_str, " ");
+  	while (docToken != nullptr) {
+        DocTokens.push_back(docToken);
+        // Get a new token
 		docToken = strtok(nullptr, " ");
 	}
 
@@ -208,19 +199,46 @@ ErrorCode MatchDocument(DocID doc_id, const char* doc_str)
             bool matching_word=false;
 			for (const auto& dtoken : DocTokens){
 				if(quer->match_type==MT_EXACT_MATCH){
+//                    // Check the cache
+                    if(common_exact_matches.find(qtoken) != common_exact_matches.end()){
+                      matching_word=true;
+                      break;
+                    }
 					if(strcmp(qtoken.c_str(), dtoken.c_str())==0){
                       matching_word=true;
+                      common_exact_matches[qtoken]=1;
                       break;
                     }
 				}
 				else if(quer->match_type==MT_HAMMING_DIST){
+                    auto pair = make_pair(qtoken,dtoken);
+                    // Check the cache
+                    if(common_ham_matches.find(pair) != common_ham_matches.end()){
+                      if (common_ham_matches[pair]<=quer->match_dist){
+                        matching_word = true;
+                        break;
+                      }
+                    }
 					unsigned int num_mismatches=HammingDistance(qtoken.c_str(), qtoken.length(), dtoken.c_str(), dtoken.length());
+	                if (num_mismatches<4){
+	                	if(common_ham_matches.find(pair) != common_ham_matches.end()) common_ham_matches[pair]= min(num_mismatches,common_ham_matches[pair]);
+                        else common_ham_matches[pair]=num_mismatches;
+                    }
 					if(num_mismatches<=quer->match_dist){
                         matching_word=true;
                         break;
                     }
 				}
 				else if(quer->match_type==MT_EDIT_DIST){
+                    auto pair = make_pair(qtoken,dtoken);
+                    // Check the cache
+                    if(common_edit_matches.find(pair) != common_edit_matches.end()){
+                      if (common_edit_matches[pair]<=quer->match_dist){
+                        matching_word=true;
+                        break;
+                      }
+                    }
+
                     // Low-Overhead Filtering
                     unsigned int m = qtoken.length();
                     unsigned int n = dtoken.length();
@@ -240,6 +258,7 @@ ErrorCode MatchDocument(DocID doc_id, const char* doc_str)
                     if (sum_of_abs > 2*(quer->match_dist) - diff ) continue;
                     // Actually compute the distance
 					unsigned int edit_dist=EditDistance(qtoken.c_str(), qtoken.length(), dtoken.c_str(), dtoken.length());
+                    if(edit_dist<4 && common_edit_matches.find(pair) != common_edit_matches.end())common_edit_matches[pair]= edit_dist;
 					if(edit_dist<=quer->match_dist){
                     	matching_word=true;
                         break;
@@ -257,11 +276,10 @@ ErrorCode MatchDocument(DocID doc_id, const char* doc_str)
 		for(long unsigned int i=0;i<query_ids.size();i++) matched_query_ids[i]=query_ids[i];
         sort(matched_query_ids, matched_query_ids + query_ids.size());
 		const auto doc = make_shared<Document>(doc_id, query_ids.size(), matched_query_ids);
-//        doc->show();
 		// Add this result to the set of undelivered results
 		docMap[doc->doc_id] = doc;
 		return EC_SUCCESS;
-    } else return EC_FAIL;
+    } else return EC_SUCCESS;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////
@@ -277,6 +295,3 @@ ErrorCode GetNextAvailRes(DocID* p_doc_id, unsigned int* p_num_res, QueryID** p_
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////
-
-int main(int, char**){
-}

@@ -1,6 +1,10 @@
+# Directories
+IMPL_DIR = task2_src
+TEST_DIR = test_driver
+
 # Build targets (your implementation targets should go in IMPL_O)
-TEST_O=test_driver/test.o 
-IMPL_O=ref_impl/Task2.o
+TEST_O = test_driver/test.o
+IMPL_O = $(wildcard $(IMPL_DIR)/*.o)
 
 # Compiler flags
 CC  = gcc
@@ -13,7 +17,7 @@ LDFLAGS=-lpthread
 PROGRAMS=testdriver
 
 # The name of the library that will be built
-LIBRARY=Task2
+LIBRARY=core
 
 # Build all programs
 all: $(PROGRAMS)
@@ -27,3 +31,4 @@ testdriver: lib $(TEST_O)
 clean:
 	rm -f $(PROGRAMS) lib$(LIBRARY).so
 	find . -name '*.o' -print | xargs rm -f
+
