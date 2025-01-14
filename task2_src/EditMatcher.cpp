@@ -27,6 +27,7 @@ void EditMatcher::addQuery(QueryID query_id, const char* q_str, unsigned int dis
         counter++;
     }
     wordsleft[query_id] = counter;
+    if (query_id == 10) cout << wordsleft[query_id] << endl;
 }
 
 void EditMatcher::removeQuery(QueryID q_id){
@@ -46,37 +47,40 @@ void EditMatcher::removeQuery(QueryID q_id){
 vector<QueryID> EditMatcher::matchQueries(array<vector<string>, MAX_WORD_LENGTH-MIN_WORD_LENGTH> &wordsByLength){
     vector<QueryID> results;
     unordered_map<QueryID, uint8_t> intermediates;
+    unordered_map<string, uint8_t> skip;
     // Check every word in Document
     for (size_t i = 0; i < wordsByLength.size(); ++i) {
       for (const auto& dword : wordsByLength[i]) {
-        cout << dword << endl;
-        // Exact word is found, no need to calculate distance
-        if (words.find(dword) != words.end()){
-          cout << "found" << endl;
-          for (const auto &id : words[dword]){
-            if (intermediates.find(id) == intermediates.end()) intermediates[id] = 1;
-            else intermediates[id] += 1;
-            if (intermediates[id] == wordsleft[id]) results.push_back(id);
-          }
-          continue;
-        }
-        cout << "Calculating trie" << endl;
-        trie.print();
         // Found
         if (trie.nearest(dword)){
-          while (!trie.results.empty()){
-            pair<string,uint8_t> res = trie.results.top();
-            for(const auto &id: words[res.first]){
-              if (queries[id] <= res.second){
+          while (!trie.results.empty()) {
+            auto previous_val = 4;
+            auto res = trie.results.begin();
+            if (skip.find(res->first) != skip.end()) {
+              if (skip[res->first] <= res->second){
+                trie.results.erase(res);
+                continue;
+              }
+              previous_val = skip[res->first];
+            }
+            skip[res->first] = res->second;
+            for(const auto &id: words[res->first]){
+              if (res->second <= queries[id] && queries[id] < previous_val){
                 if (intermediates.find(id) == intermediates.end()) intermediates[id] = 1;
                 else intermediates[id] += 1;
                 if (intermediates[id] == wordsleft[id]) results.push_back(id);
               }
             }
-            trie.results.pop();
+            res = trie.results.erase(res);
           }
         }
       }
     }
     return results;
+}
+
+void EditMatcher::printQueries(){
+  for (const auto& q: queries){
+    cout << q.first << endl;
+  }
 }

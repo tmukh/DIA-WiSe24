@@ -8,6 +8,7 @@
 #include <cstring>
 #include <algorithm>
 #include <sstream>
+#include <iostream>
 #include "../include/Task2.h"
 
 class HammingMatcher {

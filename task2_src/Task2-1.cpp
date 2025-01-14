@@ -42,7 +42,6 @@ ErrorCode StartQuery(QueryID        query_id,
                      const char*    query_str,
                      MatchType      match_type,
                      unsigned int   match_dist) {
-  cout << "Start Query:" <<  query_id << endl;
   if (match_type == MatchType::MT_EXACT_MATCH) exactMatcher.addQuery(query_id, query_str);
   else if (match_type == MatchType::MT_HAMMING_DIST) hammingMatcher.addQuery(query_id, query_str, match_dist);
   else editMatcher.addQuery(query_id, query_str, match_dist);
@@ -61,7 +60,6 @@ ErrorCode EndQuery(QueryID query_id) {
 ///////////////////////////////////////////////////////////////////////////////////////////////
 // Match the current document with all registered queries
 ErrorCode MatchDocument(DocID doc_id, const char* doc_str){
-  cout << "Start MatchDocument:" << doc_id << endl;
   // Cache the document
   docCache.updateDocument(doc_str);
   vector<QueryID> result;
@@ -69,8 +67,6 @@ ErrorCode MatchDocument(DocID doc_id, const char* doc_str){
   vector<QueryID> vec1 = exactMatcher.matchQueries(docCache.frequencies);
   vector<QueryID> vec2 = hammingMatcher.matchQueries(docCache.wordsByLength, docCache.frequencies);
   vector<QueryID> vec3 = editMatcher.matchQueries(docCache.wordsByLength);
-  for (auto i: vec3) cout << i << ',';
-  cout << endl;
   // Concatenate results
   result.reserve(vec1.size() + vec2.size() + vec3.size());
   result.insert(result.end(), vec1.begin(), vec1.end());

@@ -2,9 +2,10 @@
 #define TRIE_HPP
 
 #include <string>
+#include <cstring>
 #include <algorithm>
 #include <iostream>
-#include <stack>
+#include <unordered_map>
 #include <utility>
 #include "../include/Task2.h"
 
@@ -14,15 +15,16 @@ class TrieNode {
     TrieNode* children[26];
     bool leaf;
     uint8_t maxError;
+    uint8_t depth;
     TrieNode() : children{nullptr}, leaf(false), maxError(3){};
-    bool findNearest(const string& word, uint8_t i, uint8_t error, stack<pair<string, uint8_t>> &results);
+    bool findNearest(const string& word, uint8_t i, uint8_t error, unordered_map<string, uint8_t> &results, string& currentPrefix);
 };
 
 class Trie {
   private:
     TrieNode* root;
   public:
-    stack<pair<string, uint8_t>> results;
+    unordered_map<string, uint8_t> results;
     Trie() : root(new TrieNode()) {}
     void insert(string word);
     void remove(string word);

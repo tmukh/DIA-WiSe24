@@ -16,7 +16,7 @@ void ExactMatcher::addQuery(QueryID query_id, const char* q_str){
         if (words.find(qtoken) == words.end()) words[qtoken] = vector<QueryID>{query_id};
         else words[qtoken].push_back(query_id);
     }
-    wordsleft[query_id] = tokens.size();
+    wordsleft[query_id] = tokens[query_id].size();
 }
 
 void ExactMatcher::removeQuery(QueryID q_id){

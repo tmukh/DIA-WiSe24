@@ -29,6 +29,7 @@ public:
     EditMatcher();
     void addQuery(QueryID query_id, const char* q_str,unsigned int dist);
     void removeQuery(QueryID q_id);
+    void printQueries();
     std::vector<QueryID> matchQueries(std::array<std::vector<std::string>, MAX_WORD_LENGTH-MIN_WORD_LENGTH> &wordsByLength);
 };
 
