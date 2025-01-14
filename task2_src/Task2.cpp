@@ -7,7 +7,7 @@
 #include <bits/stdc++.h>
 #include <unordered_map>
 #include <vector>
-#include "../include/Task2.h"
+#include "Task2.h"
 using namespace std;
 
 struct QueryNaive {
