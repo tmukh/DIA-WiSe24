@@ -2,8 +2,6 @@
 
 using namespace std;
 
-EditMatcher::EditMatcher(): trie(), queries(), tokens(), words(), wordsleft() {}
-
 void EditMatcher::addQuery(QueryID query_id, const char* q_str, unsigned int dist){
     // Store query info
     queries[query_id] = dist;
@@ -27,7 +25,6 @@ void EditMatcher::addQuery(QueryID query_id, const char* q_str, unsigned int dis
         counter++;
     }
     wordsleft[query_id] = counter;
-    if (query_id == 10) cout << wordsleft[query_id] << endl;
 }
 
 void EditMatcher::removeQuery(QueryID q_id){
@@ -56,6 +53,7 @@ vector<QueryID> EditMatcher::matchQueries(array<vector<string>, MAX_WORD_LENGTH-
           while (!trie.results.empty()) {
             auto previous_val = 4;
             auto res = trie.results.begin();
+            //cout << "Found (" << dword << ") matched with (" << res->first << ")" << endl;
             if (skip.find(res->first) != skip.end()) {
               if (skip[res->first] <= res->second){
                 trie.results.erase(res);
@@ -66,6 +64,7 @@ vector<QueryID> EditMatcher::matchQueries(array<vector<string>, MAX_WORD_LENGTH-
             skip[res->first] = res->second;
             for(const auto &id: words[res->first]){
               if (res->second <= queries[id] && queries[id] < previous_val){
+                //cout << "ID: " << id << " " << unsigned(queries[id]) << "<" << unsigned(res->second)<< " increasing " << unsigned(intermediates[id]) << endl;
                 if (intermediates.find(id) == intermediates.end()) intermediates[id] = 1;
                 else intermediates[id] += 1;
                 if (intermediates[id] == wordsleft[id]) results.push_back(id);

@@ -1,19 +1,21 @@
 #include "../include/Trie.hpp"
-
-bool TrieNode::findNearest(const string& word, uint8_t i, uint8_t error, unordered_map<string, uint8_t> &results, string& currentPrefix) {
+bool TrieNode::findNearest(const string& word,
+                           uint8_t i, uint8_t error,
+                           unordered_map<string, uint8_t> &results,
+                           string& currentPrefix) {
   if (leaf) {
     // if the searched word is longer than the leaf.
-    uint8_t res = abs((int)(word.length() - i)) + error;
+    uint8_t length = word.length();
+    uint8_t res = abs((int)(length - i)) + error;
     if (res <= maxError){
       if (results.find(currentPrefix)==results.end()) results[currentPrefix] = res;
       else results[currentPrefix] = min(results[currentPrefix], res);
     }
-    return res <= maxError;
   }
   if (i>=word.length()){
     if (error>=maxError) return false;
     // if the searched word is shorter than the leaf
-    for(unsigned int j = 0; j < 26; j++){
+    for(int j = 0; j < 26; j++){
       if (children[j] != nullptr){
         char letter = 'a' + j;
         currentPrefix.push_back(letter);
@@ -35,21 +37,21 @@ bool TrieNode::findNearest(const string& word, uint8_t i, uint8_t error, unorder
     }
   }
   else {
-    for(unsigned int j = 0; j < 26; j++){
+    for(int j = 0; j < 26; j++){
       if (children[j] != nullptr){
         char letter = 'a' + j;
         currentPrefix.push_back(letter);
         // Correct letter
         if (j == (word[i]-'a')) children[j]->findNearest(word, i+1, error, results, currentPrefix);
         // Incorrect letter, which warrants insertion, deletion and change
-        else{
-          // change
-          children[j]->findNearest(word, i+1, error+1, results, currentPrefix);
-          // deletion
-          children[j]->findNearest(word, i, error+1, results, currentPrefix);
-          // insertion
-          if (j == (word[i+1]-'a')) children[j]->findNearest(word, i+2, error+1, results, currentPrefix);
-          else children[j]->findNearest(word, i+2, error+2, results, currentPrefix);
+        // change
+        children[j]->findNearest(word, i+1, error+1, results, currentPrefix);
+        // Deletion: The document word has this letter deleted
+        children[j]->findNearest(word, i, error+1, results, currentPrefix);
+        // Insertion: The document word has extra letters before this letter so we need to push the index further
+        size_t index = word.find(letter, i);
+        if (index != string::npos && index > i) {
+          children[j]->findNearest(word, index+1, error+index-i, results, currentPrefix);
         }
         currentPrefix.pop_back();
       }
@@ -70,6 +72,8 @@ void Trie::insert(string word){
   }
   node->leaf = true;
   node->depth = depth;
+
+
 }
 
 void Trie::remove(string word){

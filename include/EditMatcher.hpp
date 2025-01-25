@@ -26,7 +26,7 @@ public:
     std::unordered_map<QueryID, uint8_t> wordsleft;
     // Data structure for search purposes
     Trie trie;
-    EditMatcher();
+    EditMatcher(): trie(), queries(), tokens(), words(), wordsleft() {}
     void addQuery(QueryID query_id, const char* q_str,unsigned int dist);
     void removeQuery(QueryID q_id);
     void printQueries();

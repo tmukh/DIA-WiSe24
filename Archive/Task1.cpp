@@ -5,31 +5,10 @@
 #include <fstream>
 #include <bits/stdc++.h>
 #include <vector>
+#include <../include/Task1.h>
 using namespace std;
 
-/// Definitions:
-///
-/// Maximum document length in characters.
-#define MAX_DOC_LENGTH (1<<22)
-/// Maximum word length in characters.
-#define MAX_WORD_LENGTH 31
-/// Minimum word length in characters.
-#define MIN_WORD_LENGTH 4
-/// Maximum number of words in a query.
-#define MAX_QUERY_WORDS 5
-/// Maximum query length in characters.
-#define MAX_QUERY_LENGTH ((MAX_WORD_LENGTH+1)*MAX_QUERY_WORDS)
-/// Query ID type.
-typedef unsigned int QueryID;
-/// Document ID type.
-typedef unsigned int DocID;
-/// Matching types:
-typedef enum{MT_EXACT_MATCH, MT_HAMMING_DIST, MT_EDIT_DIST}MatchType;
-/// Error codes:
-typedef enum{EC_SUCCESS, EC_NO_AVAIL_RES, EC_FAIL}ErrorCode;
-
 /// Structs:
-///////////////////////////////////////////////////////////////////////////////////////////////
 // Keeps all information related to an active query
 struct Query
 {
@@ -38,8 +17,6 @@ struct Query
 	MatchType match_type;
 	unsigned int match_dist;
 };
-
-///////////////////////////////////////////////////////////////////////////////////////////////
 // Keeps all query ID results associated with a dcoument
 struct Document
 {
