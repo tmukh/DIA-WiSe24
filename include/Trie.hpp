@@ -24,12 +24,11 @@ class Trie {
 private:
   TrieNode* root;
 public:
-  unordered_map<string, uint8_t> results;
   Trie() : root(new TrieNode()) {}
   void insert(string word);
   void remove(string word);
   bool search(string word, bool prefix = false);
-  bool nearest(const string& word);
+  bool nearest(const string& word, unordered_map<string, uint8_t>& results);
   void print(TrieNode* node, string prefix) const;
   void print() const;
 };

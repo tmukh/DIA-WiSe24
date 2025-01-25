@@ -112,7 +112,7 @@ void Trie::print(TrieNode* node, string prefix) const{
 }
 void Trie::print() const { print(root, ""); }
 
-bool Trie::nearest(const string& word){
+bool Trie::nearest(const string& word, unordered_map<string, uint8_t>& results){
   string prefix;
   return root->findNearest(word, 0 , 0, results, prefix);
 }

@@ -17,16 +17,6 @@
 #include "../include/EditMatcher.hpp"
 using namespace std;
 
-struct ThreadResult {
-    vector<QueryID> results;
-    std::mutex mutex;
-
-    void addResults(const vector<QueryID>& new_results) {
-        lock_guard<std::mutex> lock(mutex);
-        results.insert(results.end(), new_results.begin(), new_results.end());
-    }
-};
-
 WordStorage docCache;
 ExactMatcher exactMatcher;
 HammingMatcher hammingMatcher;
@@ -77,7 +67,7 @@ ErrorCode MatchDocument(DocID doc_id, const char* doc_str){
   // Calculate results
   vector<QueryID> vec1 = exactMatcher.matchQueries(docCache.frequencies);
   vector<QueryID> vec2 = hammingMatcher.matchQueries(docCache.wordsByLength, docCache.frequencies);
-  vector<QueryID> vec3 = editMatcher.matchQueries(docCache.wordsByLength);
+  vector<QueryID> vec3 = editMatcher.ThreadMatching(docCache.wordsByLength);
   // Concatenate results
   result.reserve(vec1.size() + vec2.size() + vec3.size());
   result.insert(result.end(), vec1.begin(), vec1.end());
@@ -85,27 +75,6 @@ ErrorCode MatchDocument(DocID doc_id, const char* doc_str){
   result.insert(result.end(), vec3.begin(), vec3.end());
   // Save results
   docStack.push(make_shared<Document>(doc_id, result));
-  return EC_SUCCESS;
-}
-
-ErrorCode MatchDocumentThreaded(DocID doc_id, const char* doc_str){
-  docCache.updateDocument(doc_str);
-  ThreadResult threadResult;
-  threadResult.results.reserve(1000);
-  // initialize the workers
-  auto exactMatchWorker = [&]() {threadResult.addResults(exactMatcher.matchQueries(docCache.frequencies));};
-  auto hammingMatchWorker = [&]() {threadResult.addResults(hammingMatcher.matchQueries(docCache.wordsByLength, docCache.frequencies));};
-  auto editMatchWorker = [&]() {threadResult.addResults(editMatcher.matchQueries(docCache.wordsByLength));};
-  // Start the threads
-  thread t1(exactMatchWorker);
-  thread t2(hammingMatchWorker);
-  thread t3(editMatchWorker);
-  // retrieve results
-  t1.join();
-  t2.join();
-  t3.join();
-  // Save combined results
-  docStack.push(make_shared<Document>(doc_id, threadResult.results));
   return EC_SUCCESS;
 }
 
