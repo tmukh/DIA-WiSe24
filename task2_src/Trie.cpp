@@ -1,4 +1,4 @@
-#include "../include/Trie.hpp"
+#include "Trie.hpp"
 bool TrieNode::findNearest(const string& word,
                            uint8_t i, uint8_t error,
                            unordered_map<string, uint8_t> &results,

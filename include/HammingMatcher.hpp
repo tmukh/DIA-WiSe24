@@ -9,7 +9,8 @@
 #include <algorithm>
 #include <sstream>
 #include <iostream>
-#include "../include/Task2.h"
+#include <cstdint>
+#include "Task2.h"
 
 class HammingMatcher {
     public:

@@ -1,4 +1,4 @@
-#include "../include/ExactMatcher.hpp"
+#include "ExactMatcher.hpp"
 using namespace std;
 ExactMatcher::ExactMatcher():queries(), tokens(), words(), wordsleft() {}
 

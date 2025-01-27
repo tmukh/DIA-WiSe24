@@ -5,7 +5,7 @@
 #include <fstream>
 #include <bits/stdc++.h>
 #include <vector>
-#include "../include/Task1.h"
+#include "Task1.h"
 using namespace std;
 /// Structs:
 // Keeps all information related to an active query

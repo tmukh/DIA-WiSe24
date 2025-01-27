@@ -1,5 +1,5 @@
 
-#include "../include/HammingMatcher.hpp"
+#include "HammingMatcher.hpp"
 
 using namespace std;
 

@@ -9,12 +9,12 @@
 #include <vector>
 #include <thread>
 #include <mutex>
-#include "../include/Task2.h"
-#include "../include/DocCache.hpp"
-#include "../include/Document.hpp"
-#include "../include/ExactMatcher.hpp"
-#include "../include/HammingMatcher.hpp"
-#include "../include/EditMatcher.hpp"
+#include "Task2.h"
+#include "DocCache.hpp"
+#include "Document.hpp"
+#include "ExactMatcher.hpp"
+#include "HammingMatcher.hpp"
+#include "EditMatcher.hpp"
 using namespace std;
 
 WordStorage docCache;

@@ -1,4 +1,4 @@
-#include "../include/EditMatcher.hpp"
+#include "EditMatcher.hpp"
 
 using namespace std;
 

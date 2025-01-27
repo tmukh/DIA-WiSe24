@@ -7,7 +7,8 @@
 #include <iostream>
 #include <unordered_map>
 #include <utility>
-#include "../include/Task2.h"
+#include <cstdint>
+#include "Task2.h"
 
 using namespace std;
 class TrieNode {

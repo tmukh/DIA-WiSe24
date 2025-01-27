@@ -4,7 +4,7 @@
 #include <sys/time.h>
 using namespace std;
 
-///////////////////////////////////////////////////////////////////////////////////////////////
+
 
 int GetClockTimeInMilliSec()
 {
@@ -28,7 +28,7 @@ void PrintTime(int milli_sec)
     printf("]");
 }
 
-///////////////////////////////////////////////////////////////////////////////////////////////
+
 
 char temp[MAX_DOC_LENGTH];
 
@@ -36,6 +36,7 @@ void TestSpark(const char* test_file_str)
 {
     int i, j;
     printf("Start Spark Test ...\n"); fflush(NULL);
+    printf("Opening test file: %s\n", test_file_str); fflush(NULL);  
     FILE* test_file=fopen(test_file_str, "rt");
 
     if(!test_file)
@@ -45,8 +46,11 @@ void TestSpark(const char* test_file_str)
         return;
     }
 
+    printf("Successfully opened test file\n"); fflush(NULL);  
+    printf("Initializing index...\n"); fflush(NULL);  
     int v=GetClockTimeInMilliSec();
     InitializeIndex();
+    printf("Index initialized\n"); fflush(NULL);  
 
     unsigned int first_result=0;
     int num_cur_results=0;
@@ -57,6 +61,7 @@ void TestSpark(const char* test_file_str)
     unsigned int cur_results_size[max_results];
     unsigned int* cur_results[max_results];
 
+    printf("Starting main loop\n"); fflush(NULL);  
     while(1)
     {
         char ch;
@@ -65,8 +70,10 @@ void TestSpark(const char* test_file_str)
         if(EOF==fscanf(test_file, "%c %u ", &ch, &id))
             break;
 
+        printf("Processing command: %c with id: %u\n", ch, id); fflush(NULL);  
         if(num_cur_results && (ch=='s' || ch=='e'))
         {
+        printf("Processing results, count: %d\n", num_cur_results); fflush(NULL);  
             for(i=0;i<num_cur_results;i++)
             {
                 unsigned int doc_id=0;
@@ -141,6 +148,7 @@ void TestSpark(const char* test_file_str)
 
         if(ch=='s')
         {
+        printf("Starting query...\n"); fflush(NULL);  
             int match_type;
             int match_dist;
 
@@ -151,8 +159,10 @@ void TestSpark(const char* test_file_str)
                 return;
             }
             
+ printf("Query params: type=%d, dist=%d, text=%s\n", match_type, match_dist, temp); fflush(NULL);  
             ErrorCode err=StartQuery(id, temp, (MatchType)match_type, match_dist);
-
+            printf("StartQuery completed with code: %d\n", err); fflush(NULL);  
+            
             if(err==EC_FAIL)
             {
                 printf("The call to StartQuery() returned EC_FAIL.\n");
@@ -168,7 +178,10 @@ void TestSpark(const char* test_file_str)
         }
         else if(ch=='e')
         {
+                 printf("Ending query %u\n", id); fflush(NULL);  
             ErrorCode err=EndQuery(id);
+            printf("EndQuery completed with code: %d\n", err); fflush(NULL);  
+            
 
             if(err==EC_FAIL)
             {
@@ -185,6 +198,7 @@ void TestSpark(const char* test_file_str)
         }
         else if(ch=='m')
         {
+                        printf("Matching document...\n"); fflush(NULL);  
             if(EOF==fscanf(test_file, "%*u %[^\n\r] ", temp))
             {
                 printf("Corrupted Test File.\n");
@@ -193,6 +207,7 @@ void TestSpark(const char* test_file_str)
             }
 
             ErrorCode err=MatchDocument(id, temp);
+            printf("MatchDocument completed with code: %d\n", err); fflush(NULL);  
 
             if(err==EC_FAIL)
             {
@@ -243,10 +258,12 @@ void TestSpark(const char* test_file_str)
             return;
         }
     }
-
+    printf("Main loop completed, cleaning up...\n"); fflush(NULL);  
     v=GetClockTimeInMilliSec()-v;
 
+    printf("About to destroy index...\n"); fflush(NULL);  
     DestroyIndex();
+    printf("Index destroyed\n"); fflush(NULL);  
 
     fclose(test_file);
 
@@ -254,7 +271,7 @@ void TestSpark(const char* test_file_str)
     printf("Time="); PrintTime(v); printf("\n");
 }
 
-///////////////////////////////////////////////////////////////////////////////////////////////
+
 
 int main(int argc, char* argv[])
 {
@@ -263,4 +280,3 @@ int main(int argc, char* argv[])
     return 0;
 }
 
-///////////////////////////////////////////////////////////////////////////////////////////////
