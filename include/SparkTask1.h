@@ -4,12 +4,27 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <mutex>  
 #include <jni.h>
 #include "Task1.h"
 
+
+class JNILocalRef {
+    JNIEnv* env;
+    jobject ref;
+public:
+    JNILocalRef(JNIEnv* e, jobject r) : env(e), ref(r) {}
+    ~JNILocalRef() { if(ref) env->DeleteLocalRef(ref); }
+    operator jobject() const { return ref; }
+    jobject get() const { return ref; }
+};
+
 class SparkMatchEngine {
 private:
-    // Query structure definition
+    
+    std::mutex jvm_mutex;
+
+    
     struct Query {
         QueryID first;
         std::string second;
@@ -17,26 +32,24 @@ private:
         unsigned int match_dist;
     };
 
-    // JVM related members
+    
     JavaVM* jvm;
     JNIEnv* env;
     jobject sparkContext;
-    
-    // Data members
+    jclass sparkContextClass;
+    jclass queryClass;
+    jclass matcherClass;
+
     std::vector<Query> active_queries;
     std::vector<std::pair<DocID, std::vector<QueryID>>> pending_results;
+
     
-    // Internal methods
     bool initJVM();
     void destroyJVM();
-    bool matchQueryToDoc(const std::string& query, const std::string& doc,
-                        MatchType match_type, unsigned int match_dist);
-    unsigned int computeHammingDistance(const std::string& a, const std::string& b);
-    unsigned int computeEditDistance(const std::string& a, const std::string& b, unsigned int match_dist);
+
 public:
     SparkMatchEngine();
     ~SparkMatchEngine();
-    
     ErrorCode initialize();
     ErrorCode destroy();
     ErrorCode startQuery(QueryID query_id, const std::string& query_str,
@@ -47,7 +60,7 @@ public:
                             std::vector<QueryID>& query_ids);
 };
 
-// C API implementations
+
 extern "C" {
     ErrorCode InitializeIndex();
     ErrorCode DestroyIndex();
@@ -57,6 +70,8 @@ extern "C" {
     ErrorCode MatchDocument(DocID doc_id, const char* doc_str);
     ErrorCode GetNextAvailRes(DocID* p_doc_id, unsigned int* p_num_res,
                             QueryID** p_query_ids);
+    
+    void FreeQueryIds(QueryID* query_ids);
 }
 
-#endif // __SPARK_TASK1_H_
+#endif 

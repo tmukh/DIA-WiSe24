@@ -1,4 +1,7 @@
-#include "../include/DocCache.hpp"
+#include "DocCache.hpp"
+#include <sstream>
+#include <cstdint>
+#include <string>
 
 WordStorage::WordStorage():wordsByLength(), frequencies() {}
 
@@ -10,8 +13,8 @@ void WordStorage::updateDocument(const char* doc_str){
     }
 
     // Tokenization
-	istringstream stream(doc_str);
-	string docToken;
+	std::istringstream stream(doc_str);
+	std::string docToken;
   	while (stream >> docToken) {
         // Deduplicate document words
         if (frequencies.find(docToken) != frequencies.end()) continue;

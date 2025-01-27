@@ -6,7 +6,7 @@
 #include <string>
 #include <iostream>
 #include <bits/stdc++.h>
-#include "../include/Task2.h"
+#include "Task2.h"
 
 using namespace std;
 

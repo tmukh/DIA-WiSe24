@@ -6,280 +6,525 @@
 #include <mutex>
 #include <jni.h>
 #include <iostream>
+#include <dirent.h>
+#include <unistd.h>
+#include <linux/limits.h>
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
+#include <chrono>
+#include <atomic>
 
-// Global instance of our engine
+class Logger {
+public:
+    enum Level { ERROR, INFO, DEBUG };
+    static Level logLevel;
+    
+    static void log(const std::string& message, Level level = ERROR) {
+        if (level > logLevel) return;
+        
+        auto now = std::chrono::system_clock::now();
+        auto in_time_t = std::chrono::system_clock::to_time_t(now);
+
+        std::ofstream logFile("spark_matcher_debug.log", std::ios::app);
+        logFile << std::put_time(std::localtime(&in_time_t), "%Y-%m-%d %X")
+                << " - " << message << std::endl;
+    }
+};
+
+
+Logger::Level Logger::logLevel = Logger::ERROR;
+namespace fs = std::filesystem;
+
+
 static std::unique_ptr<SparkMatchEngine> engine;
 
-// Helper function to split string into words
-std::vector<std::string_view> splitIntoWords(const std::string& str) {
-    static thread_local std::vector<std::string_view> words;
-    words.clear();
+bool SparkMatchEngine::initJVM() {
+    Logger::log("Starting JVM");
+    std::string sparkHome = "/opt/spark";
+    Logger::log("Checking spark home directory");  
+    std::string javaHome = "/usr/lib/jvm/java-17-openjdk";
+
     
-    const char* start = str.data();
-    const char* end = start + str.length();
-    const char* word_start = start;
+    char cwd[PATH_MAX];
+    if (getcwd(cwd, sizeof(cwd)) == NULL) {
+        std::cerr << "Error getting current working directory" << std::endl;
+        return false;
+    }
+    std::string classpath = "-Djava.class.path=";
     
-    while (word_start < end) {
-        // Skip spaces
-        while (word_start < end && *word_start == ' ') ++word_start;
-        if (word_start == end) break;
-        
-        // Find word end
-        const char* word_end = word_start;
-        while (word_end < end && *word_end != ' ') ++word_end;
-        
-        words.emplace_back(word_start, word_end - word_start);
-        word_start = word_end;
+    
+    std::string sparkJarDir = sparkHome + "/jars";
+
+    try {
+        Logger::log("Starting jar directory scan");  
+        for (const auto& entry : fs::directory_iterator(sparkJarDir)) {
+            if (entry.path().extension() == ".jar") {
+                classpath += entry.path().string() + ":";
+            }
+        }
+        Logger::log("Finished jar directory scan");  
+    } catch (const fs::filesystem_error& e) {
+        std::cerr << "Error processing Spark jars directory: " << e.what() << std::endl;
+        return false;
+    }
+
+    
+    std::string matcherJarPath = std::string(cwd) + "/spark-matcher/target/spark-matcher-1.0-SNAPSHOT.jar";
+    classpath += matcherJarPath;
+
+    
+    JavaVMOption* options = new JavaVMOption[10];
+    int optionCount = 0;
+
+    options[optionCount++].optionString = const_cast<char*>(classpath.c_str());
+    options[optionCount++].optionString = const_cast<char*>("-Xmx4g");
+    
+    
+    
+    options[optionCount++].optionString = const_cast<char*>("--add-opens=java.base/sun.nio.ch=ALL-UNNAMED");
+    options[optionCount++].optionString = const_cast<char*>("-Dlog4j.configuration=file:src/main/resources/log4j.properties");
+    
+    
+    
+    
+    
+
+    JavaVMInitArgs vm_args;
+    vm_args.version = JNI_VERSION_1_8;
+    vm_args.nOptions = optionCount;
+    vm_args.options = options;
+    vm_args.ignoreUnrecognized = JNI_TRUE;
+
+    
+    jint rc = JNI_CreateJavaVM(&jvm, reinterpret_cast<void**>(&env), &vm_args);
+    
+    
+    delete[] options;
+
+    if (rc != JNI_OK) {
+        std::cerr << "JVM Creation Failed. Error code: " << rc << std::endl;
+        return false;
     }
     
-    return words;
-}
+    std::cout << "JVM created successfully" << std::endl;  
+    
+    try {
+        
+        if (!env) {
+            std::cerr << "JNIEnv is null after JVM creation" << std::endl;
+            return false;
+        }
 
-bool SparkMatchEngine::initJVM() {
-    return true; // For now, we'll skip JVM initialization and just use threading
+        
+        jclass sparkConfClass = env->FindClass("org/apache/spark/SparkConf");
+        if (!sparkConfClass) {
+            std::cerr << "Failed to find SparkConf class" << std::endl;
+            if (env->ExceptionCheck()) {
+                env->ExceptionDescribe();
+                env->ExceptionClear();
+            }
+            return false;
+        }
+        
+        
+        jmethodID sparkConfConstructor = env->GetMethodID(sparkConfClass, "<init>", "()V");
+        if (!sparkConfConstructor) {
+            std::cerr << "Failed to find SparkConf constructor" << std::endl;
+            return false;
+        }
+        
+        jobject sparkConf = env->NewObject(sparkConfClass, sparkConfConstructor);
+        if (!sparkConf) {
+            std::cerr << "Failed to create SparkConf object" << std::endl;
+            return false;
+        }
+        
+jmethodID setLogLevel = env->GetMethodID(sparkConfClass, "set", 
+    "(Ljava/lang/String;Ljava/lang/String;)Lorg/apache/spark/SparkConf;");
+
+jstring logKey = env->NewStringUTF("spark.log.level");
+jstring logValue = env->NewStringUTF("OFF");
+env->CallObjectMethod(sparkConf, setLogLevel, logKey, logValue);
+env->DeleteLocalRef(logKey);
+env->DeleteLocalRef(logValue);
+
+
+options[optionCount++].optionString = const_cast<char*>("-Dlog4j2.configurationFile=src/main/resources/log4j2.properties");
+options[optionCount++].optionString = const_cast<char*>("-Dlog4j.configuration=src/main/resources/log4j2.properties");
+        
+        jmethodID setAppName = env->GetMethodID(sparkConfClass, "setAppName",
+            "(Ljava/lang/String;)Lorg/apache/spark/SparkConf;");
+        if (!setAppName) {
+            std::cerr << "Failed to find setAppName method" << std::endl;
+            return false;
+        }
+        jmethodID setMaster = env->GetMethodID(sparkConfClass, "setMaster",
+            "(Ljava/lang/String;)Lorg/apache/spark/SparkConf;");
+        if (!setMaster) {
+            std::cerr << "Failed to find setMaster method" << std::endl;
+            return false;
+        }
+        
+        jstring masterUrl = env->NewStringUTF("local[*]");
+        jstring appName = env->NewStringUTF("DocumentMatcher");
+        
+        env->CallObjectMethod(sparkConf, setMaster, masterUrl);
+        env->CallObjectMethod(sparkConf, setAppName, appName);
+        
+        env->DeleteLocalRef(masterUrl);
+        env->DeleteLocalRef(appName);
+        
+        
+        jclass javaSparkContextClass = env->FindClass("org/apache/spark/api/java/JavaSparkContext");
+        if (!javaSparkContextClass) {
+            std::cerr << "Failed to find JavaSparkContext class" << std::endl;
+            if (env->ExceptionCheck()) {
+                env->ExceptionDescribe();
+                env->ExceptionClear();
+            }
+            return false;
+        }
+        
+        jmethodID contextConstructor = env->GetMethodID(javaSparkContextClass, "<init>", 
+            "(Lorg/apache/spark/SparkConf;)V");
+        if (!contextConstructor) {
+            std::cerr << "Failed to find JavaSparkContext constructor" << std::endl;
+            return false;
+        }
+        
+        sparkContext = env->NewGlobalRef(
+            env->NewObject(javaSparkContextClass, contextConstructor, sparkConf)
+        );
+        
+        
+        sparkContextClass = (jclass)env->NewGlobalRef(javaSparkContextClass);
+        queryClass = (jclass)env->NewGlobalRef(env->FindClass("com/spark/matcher/Query"));
+        matcherClass = (jclass)env->NewGlobalRef(env->FindClass("com/spark/matcher/DocumentMatcher"));
+        
+        if (!sparkContext || !sparkContextClass || !queryClass || !matcherClass) {
+            std::cerr << "Failed to initialize one or more required classes" << std::endl;
+            if (env->ExceptionCheck()) {
+                env->ExceptionDescribe();
+                env->ExceptionClear();
+            }
+            return false;
+        }
+        
+        std::cout << "Spark context created successfully" << std::endl;  
+        
+        
+        env->DeleteLocalRef(sparkConfClass);
+        env->DeleteLocalRef(sparkConf);
+        env->DeleteLocalRef(javaSparkContextClass);
+        
+        return true;
+        
+    } catch (const std::exception& e) {
+        std::cerr << "Standard exception during Spark initialization: " << e.what() << std::endl;
+        return false;
+    } catch (...) {
+        std::cerr << "Unknown exception during Spark initialization" << std::endl;
+        return false;
+    }
 }
 
 void SparkMatchEngine::destroyJVM() {
-    // Nothing to do for now
+    std::lock_guard<std::mutex> lock(jvm_mutex);
+    Logger::log("Starting JVM cleanup sequence");
+    
+    try {
+        if (env && !env->ExceptionCheck()) {
+            
+            if (sparkContext && sparkContextClass) {
+                jmethodID stopMethod = env->GetMethodID(sparkContextClass, "stop", "()V");
+                if (stopMethod) {
+                    env->CallVoidMethod(sparkContext, stopMethod);
+                }
+            }
+            
+            
+            if (env->ExceptionCheck()) {
+                env->ExceptionClear();
+            }
+
+            
+            if (matcherClass) env->DeleteGlobalRef(matcherClass);
+            if (queryClass) env->DeleteGlobalRef(queryClass);
+            if (sparkContextClass) env->DeleteGlobalRef(sparkContextClass);
+            if (sparkContext) env->DeleteGlobalRef(sparkContext);
+
+            matcherClass = nullptr;
+            queryClass = nullptr;
+            sparkContextClass = nullptr;
+            sparkContext = nullptr;
+        }
+
+        
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+        if (jvm) {
+            Logger::log("Destroying JVM");
+            jint result = jvm->DestroyJavaVM();
+            if (result != JNI_OK) {
+                Logger::log("Error destroying JVM: " + std::to_string(result));
+            }
+            jvm = nullptr;
+            env = nullptr;
+        }
+    } catch (...) {
+        Logger::log("Exception during JVM cleanup");
+    }
 }
 
-SparkMatchEngine::SparkMatchEngine() : jvm(nullptr), env(nullptr), sparkContext(nullptr) {
-    initJVM();
+SparkMatchEngine::SparkMatchEngine() : jvm(nullptr), env(nullptr), sparkContext(nullptr),
+    sparkContextClass(nullptr), queryClass(nullptr), matcherClass(nullptr) {
+        std::lock_guard<std::mutex> lock(jvm_mutex);
+        initJVM();
 }
 
 SparkMatchEngine::~SparkMatchEngine() {
-    destroyJVM();
+    static std::atomic<bool> destroying{false};
+    if (destroying.exchange(true)) {
+        Logger::log("Destructor already in progress, skipping");
+        return;
+    }
+    
+    Logger::log("Starting SparkMatchEngine destructor");
+    
+    try {
+        
+        destroy();
+        
+        
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        
+        
+        destroyJVM();
+        
+        Logger::log("SparkMatchEngine destructor completed successfully");
+    } catch (const std::exception& e) {
+        Logger::log("Exception in destructor: " + std::string(e.what()));
+    } catch (...) {
+        Logger::log("Unknown exception in destructor");
+    }
+    
+    destroying = false;
 }
 
 ErrorCode SparkMatchEngine::initialize() {
+    Logger::log("Initializing SparkMatchEngine");
+    
     active_queries.clear();
     pending_results.clear();
+    
+    Logger::log("Active queries and pending results cleared");
     return EC_SUCCESS;
 }
-
 ErrorCode SparkMatchEngine::destroy() {
+    std::lock_guard<std::mutex> lock(jvm_mutex);
+    Logger::log("Starting SparkMatchEngine destroy sequence");
+    
+    
     active_queries.clear();
     pending_results.clear();
+
+    try {
+        if (env && !env->ExceptionCheck()) {
+            
+            if (sparkContext && sparkContextClass) {
+                Logger::log("Stopping SparkContext");
+                jmethodID stopMethod = env->GetMethodID(sparkContextClass, "stop", "()V");
+                if (stopMethod) {
+                    env->CallVoidMethod(sparkContext, stopMethod);
+                    if (env->ExceptionCheck()) {
+                        Logger::log("Exception during SparkContext stop");
+                        env->ExceptionDescribe();
+                        env->ExceptionClear();
+                    }
+                }
+                
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
+        }
+    } catch (...) {
+        Logger::log("Exception during Spark cleanup");
+    }
+
+    Logger::log("SparkMatchEngine destroy completed");
     return EC_SUCCESS;
 }
 
 ErrorCode SparkMatchEngine::startQuery(QueryID query_id, const std::string& query_str,
                                      MatchType match_type, unsigned int match_dist) {
+    
+    std::stringstream ss;
+    ss << "Starting Query: ID=" << query_id 
+       << ", String='" << query_str 
+       << "', Type=" << match_type 
+       << ", Distance=" << match_dist;
+    Logger::log(ss.str());
+
+    
+    auto it = std::find_if(active_queries.begin(), active_queries.end(), 
+        [query_id](const Query& q) { return q.first == query_id; });
+    
+    if (it != active_queries.end()) {
+        Logger::log("Error: Query with ID " + std::to_string(query_id) + " already exists");
+        return EC_FAIL;
+    }
+
     Query query;
     query.first = query_id;
     query.second = query_str;
     query.match_type = match_type;
     query.match_dist = match_dist;
+    
     active_queries.push_back(query);
+    
+    
+    ss.str("");
+    ss << "Active Queries after addition: " << active_queries.size();
+    Logger::log(ss.str());
+
     return EC_SUCCESS;
 }
-
 ErrorCode SparkMatchEngine::endQuery(QueryID query_id) {
+    Logger::log("Ending Query: ID=" + std::to_string(query_id));
+
+    size_t initial_size = active_queries.size();
+    
     auto it = std::remove_if(active_queries.begin(), active_queries.end(),
-                            [query_id](const auto& q) { 
-                                return q.first == query_id; 
-                            });
+        [query_id](const Query& q) { 
+            return q.first == query_id; 
+        });
+    
+    if (it == active_queries.end() || std::distance(it, active_queries.end()) == 0) {
+        Logger::log("Error: Query with ID " + std::to_string(query_id) + " not found");
+        return EC_FAIL;
+    }
+    
     active_queries.erase(it, active_queries.end());
+    
+    std::stringstream ss;
+    ss << "Queries after removal: " << active_queries.size() 
+       << " (Removed: " << (initial_size - active_queries.size()) << ")";
+    Logger::log(ss.str());
+
     return EC_SUCCESS;
-}
-
-unsigned int SparkMatchEngine::computeHammingDistance(const std::string& a, const std::string& b) {
-    if (a.length() != b.length()) return 0x7FFFFFFF;
-    unsigned int distance = 0;
-    for (size_t i = 0; i < a.length(); ++i) {
-        if (a[i] != b[i]) ++distance;
+}ErrorCode SparkMatchEngine::matchDocument(DocID doc_id, const std::string& doc_str) {
+    std::lock_guard<std::mutex> lock(jvm_mutex);
+    Logger::log("Starting matchDocument execution");
+    
+    if (active_queries.empty()) {
+        Logger::log("No active queries to match against document");
+        return EC_SUCCESS;
     }
-    return distance;
-}
 
-unsigned int SparkMatchEngine::computeEditDistance(const std::string& a, const std::string& b, unsigned int match_dist) {
-    const size_t m = a.length();
-    const size_t n = b.length();
-    
-    // Early exit for empty strings or too different lengths
-    if (m == 0) return n;
-    if (n == 0) return m;
-    if (abs(static_cast<int>(m - n)) > match_dist) return 0x7FFFFFFF;
-
-    // Use static thread_local to avoid repeated allocations
-    static thread_local std::vector<unsigned int> prev;
-    static thread_local std::vector<unsigned int> curr;
-    
-    // Resize if needed
-    if (prev.size() <= n) {
-        prev.resize(n + 1);
-        curr.resize(n + 1);
-    }
-    
-    // Initialize first row
-    for (size_t j = 0; j <= n; j++) {
-        prev[j] = j;
-    }
-    
-    // Fill the matrix while keeping track of minimum value in current row
-    for (size_t i = 1; i <= m; i++) {
-        curr[0] = i;
-        unsigned int minInRow = curr[0];
+    try {
         
-        for (size_t j = 1; j <= n; j++) {
-            curr[j] = std::min({
-                prev[j] + 1,                    // deletion
-                curr[j-1] + 1,                  // insertion
-                prev[j-1] + (a[i-1] != b[j-1])  // substitution
-            });
-            minInRow = std::min(minInRow, curr[j]);
-        }
-        
-        // Early exit if we can't possibly get under match_dist
-        if (minInRow > match_dist) return 0x7FFFFFFF;
-        
-        // Swap vectors (avoid copy)
-        prev.swap(curr);
-    }
-    
-    return prev[n];
-}
-
-bool SparkMatchEngine::matchQueryToDoc(const std::string& query, const std::string& doc,
-                                     MatchType match_type, unsigned int match_dist) {
-    static thread_local std::vector<std::string_view> query_words;
-    static thread_local std::vector<std::string_view> doc_words;
-    
-    query_words = splitIntoWords(query);
-    if (query_words.empty()) return false;
-    
-    doc_words = splitIntoWords(doc);
-    if (doc_words.empty()) return false;
-    
-    // For exact match, use faster comparison
-    if (match_type == MT_EXACT_MATCH) {
-        for (const auto& qword : query_words) {
-            bool matched = false;
-            for (const auto& dword : doc_words) {
-                if (qword.length() == dword.length() && 
-                    memcmp(qword.data(), dword.data(), qword.length()) == 0) {
-                    matched = true;
-                    break;
+        if (!env || !env->ExceptionCheck()) {
+            Logger::log("Creating ArrayList for queries");
+            
+            
+            jclass arrayListClass = env->FindClass("java/util/ArrayList");
+            jobject queryList = nullptr;
+            
+            if (arrayListClass) {
+                jmethodID constructor = env->GetMethodID(arrayListClass, "<init>", "()V");
+                if (constructor) {
+                    queryList = env->NewObject(arrayListClass, constructor);
                 }
             }
-            if (!matched) return false;
-        }
-        return true;
-    }
-    
-    // For Hamming distance, words must be same length
-    if (match_type == MT_HAMMING_DIST) {
-        for (const auto& qword : query_words) {
-            bool matched = false;
-            for (const auto& dword : doc_words) {
-                if (qword.length() == dword.length() && 
-                    computeHammingDistance(std::string(qword), std::string(dword)) <= match_dist) {
-                    matched = true;
-                    break;
-                }
-            }
-            if (!matched) return false;
-        }
-        return true;
-    }
-    
-    // Edit distance with early exits
-    for (const auto& qword : query_words) {
-        bool matched = false;
-        for (const auto& dword : doc_words) {
-            // In matchQueryToDoc where we call computeEditDistance:
-if (abs(static_cast<int>(qword.length() - dword.length())) <= match_dist &&
-    computeEditDistance(std::string(qword), std::string(dword), match_dist) <= match_dist) {
-    matched = true;
-    break;
-}
-        }
-        if (!matched) return false;
-    }
-    
-    return true;
-}
 
-
-ErrorCode SparkMatchEngine::matchDocument(DocID doc_id, const std::string& doc_str) {
-    std::vector<QueryID> matching_queries;
-    
-    // Only use parallelization if we have enough queries
-    const size_t PARALLEL_THRESHOLD = 100;
-    
-    if (active_queries.size() < PARALLEL_THRESHOLD) {
-        // Single-threaded processing for small workloads
-        for (const auto& query : active_queries) {
-            if (matchQueryToDoc(query.second, doc_str, query.match_type, query.match_dist)) {
-                matching_queries.push_back(query.first);
+            if (!queryList) {
+                Logger::log("Failed to create ArrayList");
+                return EC_FAIL;
             }
-        }
-    } else {
-        // Get max threads minus 1 to leave one core free
-        unsigned int num_threads = std::thread::hardware_concurrency() - 1;
-        if (num_threads == 0) num_threads = 1;  // Safeguard for single core systems
-        
-        std::vector<std::thread> threads;
-        std::mutex results_mutex;
-        
-        // Pre-allocate vectors to avoid reallocations
-        matching_queries.reserve(active_queries.size() / 4);  // Estimate 25% match rate
-        threads.reserve(num_threads);
-        
-        std::cout << "Processing doc " << doc_id << " using " << num_threads 
-                  << " threads for " << active_queries.size() << " queries" << std::endl;
-        
-        // Ensure we don't create more threads than queries
-        num_threads = std::min(num_threads, static_cast<unsigned int>(active_queries.size()));
-        size_t queries_per_thread = (active_queries.size() + num_threads - 1) / num_threads;
-        
-        // Launch threads
-        for (unsigned int i = 0; i < num_threads; ++i) {
-            size_t start_idx = i * queries_per_thread;
-            size_t end_idx = std::min(start_idx + queries_per_thread, active_queries.size());
+
             
-            if (start_idx >= active_queries.size()) break;
-            
-            threads.emplace_back([this, &doc_str, &matching_queries, &results_mutex, 
-                                start_idx, end_idx]() {
-                // Local vector for this thread's matches with pre-allocation
-                std::vector<QueryID> thread_matches;
-                thread_matches.reserve((end_idx - start_idx) / 4);  // Estimate 25% match rate
+            jmethodID addMethod = env->GetMethodID(arrayListClass, "add", "(Ljava/lang/Object;)Z");
+            for (const auto& query : active_queries) {
+                jstring queryStr = env->NewStringUTF(query.second.c_str());
+                jobject queryObj = env->NewObject(queryClass, env->GetMethodID(queryClass, "<init>", "(JLjava/lang/String;II)V"),
+                    (jlong)query.first, queryStr, (jint)query.match_type, (jint)query.match_dist);
                 
-                for (size_t j = start_idx; j < end_idx; ++j) {
-                    const auto& query = active_queries[j];
-                    if (matchQueryToDoc(query.second, doc_str, query.match_type, query.match_dist)) {
-                        thread_matches.push_back(query.first);
+                if (queryObj) {
+                    env->CallBooleanMethod(queryList, addMethod, queryObj);
+                    env->DeleteLocalRef(queryObj);
+                }
+                env->DeleteLocalRef(queryStr);
+            }
+
+            
+            Logger::log("Calling matchQueries");
+            jstring docString = env->NewStringUTF(doc_str.c_str());
+            jmethodID matchMethod = env->GetStaticMethodID(matcherClass, "matchQueries",
+                "(Lorg/apache/spark/api/java/JavaSparkContext;Ljava/util/List;Ljava/lang/String;)[J");
+
+            if (!matchMethod) {
+                Logger::log("Failed to find matchQueries method");
+                env->DeleteLocalRef(docString);
+                env->DeleteLocalRef(queryList);
+                return EC_FAIL;
+            }
+
+            jobject resultArray = env->CallStaticObjectMethod(matcherClass, matchMethod, 
+                sparkContext, queryList, docString);
+
+            
+            if (env->ExceptionCheck()) {
+                Logger::log("Exception occurred during matchQueries call");
+                env->ExceptionDescribe();
+                env->ExceptionClear();
+                env->DeleteLocalRef(docString);
+                env->DeleteLocalRef(queryList);
+                return EC_FAIL;
+            }
+
+            
+            if (resultArray) {
+                jsize len = env->GetArrayLength((jlongArray)resultArray);
+                jlong* elements = env->GetLongArrayElements((jlongArray)resultArray, nullptr);
+                
+                if (elements) {
+                    std::vector<QueryID> matches;
+                    matches.reserve(len);
+                    for (jsize i = 0; i < len; i++) {
+                        matches.push_back((QueryID)elements[i]);
+                    }
+                    
+                    env->ReleaseLongArrayElements((jlongArray)resultArray, elements, JNI_ABORT);
+                    
+                    if (!matches.empty()) {
+                        pending_results.emplace_back(doc_id, std::move(matches));
                     }
                 }
                 
-                // Single lock at the end instead of per-match
-                if (!thread_matches.empty()) {
-                    std::lock_guard<std::mutex> lock(results_mutex);
-                    matching_queries.insert(matching_queries.end(), 
-                                         thread_matches.begin(), thread_matches.end());
-                }
-            });
-        }
-        
-        // Wait for all threads to complete
-        for (auto& thread : threads) {
-            thread.join();
-        }
-    }
-    
-    // Sort results before storing
-    if (!matching_queries.empty()) {
-        std::sort(matching_queries.begin(), matching_queries.end());
-        pending_results.emplace_back(doc_id, std::move(matching_queries));
-    }
-    
-    return EC_SUCCESS;
-}
+                env->DeleteLocalRef(resultArray);
+            }
 
+            
+            env->DeleteLocalRef(docString);
+            env->DeleteLocalRef(queryList);
+            
+            Logger::log("matchDocument completed successfully");
+            return EC_SUCCESS;
+        }
+    } catch (const std::exception& e) {
+        Logger::log(std::string("Exception in matchDocument: ") + e.what());
+    } catch (...) {
+        Logger::log("Unknown exception in matchDocument");
+    }
+
+    return EC_FAIL;
+}
 ErrorCode SparkMatchEngine::getNextAvailRes(DocID& doc_id, unsigned int& num_res,
                                           std::vector<QueryID>& query_ids) {
+    Logger::log("Retrieving Next Available Result");
+
     if (pending_results.empty()) {
+        Logger::log("No pending results available");
         return EC_NO_AVAIL_RES;
     }
     
@@ -288,22 +533,74 @@ ErrorCode SparkMatchEngine::getNextAvailRes(DocID& doc_id, unsigned int& num_res
     query_ids = result.second;
     num_res = query_ids.size();
     
+    std::stringstream ss;
+    ss << "Result Retrieved: Document ID=" << doc_id 
+       << ", Matching Queries=" << num_res;
+    Logger::log(ss.str());
+
+    
+    ss.str("");
+    ss << "Matching Query IDs: ";
+    for (auto qid : query_ids) {
+        ss << qid << " ";
+    }
+    Logger::log(ss.str());
+
     pending_results.erase(pending_results.begin());
+    
     return EC_SUCCESS;
 }
 
-// C API implementations
+
+
+
 extern "C" {
+    void FreeQueryIds(QueryID* query_ids) {
+    if (query_ids) {
+        free(query_ids);
+    }
+}
     ErrorCode InitializeIndex() {
         engine = std::make_unique<SparkMatchEngine>();
         return engine->initialize();
     }
     
-    ErrorCode DestroyIndex() {
-        if (!engine) return EC_FAIL;
-        auto result = engine->destroy();
-        engine.reset();
-        return result;
+        ErrorCode DestroyIndex() {
+        Logger::log("Starting DestroyIndex");
+        
+        if (!engine) {
+            Logger::log("Engine already destroyed");
+            return EC_FAIL;
+        }
+        
+        try {
+            
+            auto result = engine->destroy();
+            
+            
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            
+            
+            {
+                std::unique_ptr<SparkMatchEngine> tmp;
+                tmp.swap(engine);  
+                
+                
+                if (tmp) {
+                    tmp.reset();
+                }
+            }
+            
+            Logger::log("DestroyIndex completed successfully");
+            return result;
+            
+        } catch (const std::exception& e) {
+            Logger::log("Exception during DestroyIndex: " + std::string(e.what()));
+            return EC_FAIL;
+        } catch (...) {
+            Logger::log("Unknown exception during DestroyIndex");
+            return EC_FAIL;
+        }
     }
     
     ErrorCode StartQuery(QueryID query_id, const char* query_str,
@@ -327,6 +624,8 @@ extern "C" {
         if (!engine || !p_doc_id || !p_num_res || !p_query_ids) return EC_FAIL;
         
         static std::vector<QueryID> current_results;
+        current_results.clear();
+        
         auto result = engine->getNextAvailRes(*p_doc_id, *p_num_res, current_results);
         
         if (result == EC_SUCCESS) {
