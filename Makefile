@@ -59,8 +59,8 @@ task1driver: lib$(TASK1_LIB).so $(TEST_OBJ)
 task2driver: lib$(TASK2_LIB).so $(TEST_OBJ)
 	$(CXX) $(CXXFLAGS) $(RPATH) -o $@ $(TEST_OBJ) -L. -l$(TASK2_LIB)
 # Spark test driver
-spark_testdriver: lib$(SPARK_LIB).so $(SPARK_TEST_OBJ)
-	$(CXX) $(CXXFLAGS) $(RPATH) -o $@ $(SPARK_TEST_OBJ) -L. -l$(SPARK_LIB) $(LDFLAGS)
+spark_testdriver: lib$(SPARK_LIB).so $(TEST_OBJ)
+	$(CXX) $(CXXFLAGS) $(RPATH) -o $@ $(TEST_OBJ) -L. -l$(SPARK_LIB) $(LDFLAGS)
 # Speed comparison test
 speed_test: lib$(TASK1_LIB).so lib$(SPARK_LIB).so $(SPEED_TEST_OBJ)
 	$(CXX) $(CXXFLAGS) $(RPATH) -o $@ $(SPEED_TEST_OBJ) -L. -l$(TASK1_LIB) -l$(SPARK_LIB) $(LDFLAGS)
